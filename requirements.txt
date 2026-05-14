@@ -1,0 +1,11 @@
+pyrogram
+tgcrypto
+yt-dlp
+python-dotenv
+aiohttp
+aiofiles
+Pillow
+hachoir
+ffmpeg-python
+aiosqlite
+uvloop; platform_system != "Windows"

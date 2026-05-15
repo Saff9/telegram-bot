@@ -205,12 +205,24 @@ class YouTubeEngineFinal:
             ydl_opts = {
                 'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
                 'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
-                'quiet': True, 'noprogress': True, 'concurrent_fragment_downloads': 10,
-                'progress_hooks': [dl_hook], 'retries': 10, 'nocheckcertificate': True
+                'quiet': True, 'noprogress': True, 
+                'concurrent_fragment_downloads': 10,
+                'progress_hooks': [dl_hook], 'retries': 15, 
+                'nocheckcertificate': True,
+                'ignoreerrors': False,
+                'logtostderr': False,
+                'no_warnings': True,
+                'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None
             }
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
+                try:
+                    info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
+                except Exception as e:
+                    if "Sign in to confirm you’re not a bot" in str(e):
+                        raise Exception("🔒 **YouTube Bot Detection Triggered**\n\nCloud IPs (Render/AWS) are often blocked. To fix this:\n1. Export your YouTube cookies using a browser extension (e.g., 'EditThisCookie').\n2. Add a new environment variable `COOKIES_CONTENT` in Render and paste the cookie text there.")
+                    raise e
+
                 v_path = ydl.prepare_filename(info)
                 if not os.path.exists(v_path):
                     base = os.path.splitext(v_path)[0]
@@ -300,11 +312,18 @@ async def start_web_server():
     logger.info(f"Dummy web server started on port {port}")
 
 async def main():
-    # 1. Start Dummy Web Server for Render IMMEDIATELY
+    # 1. Handle Cookies for yt-dlp
+    cookies = os.getenv("COOKIES_CONTENT")
+    if cookies:
+        with open("cookies.txt", "w") as f:
+            f.write(cookies)
+        logger.info("✅ Cookies loaded from environment variable.")
+
+    # 2. Start Dummy Web Server for Render IMMEDIATELY
     if os.getenv("PORT"):
         await start_web_server()
 
-    # 2. Check variables
+    # 3. Check variables
     if not API_ID or not API_HASH:
         logger.error("API_ID or API_HASH is missing! Please get them from my.telegram.org and set them in your environment variables.")
         

@@ -10,12 +10,21 @@ from enum import Enum
 from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 
+import platform
+
 # --- Performance: uvloop Integration ---
+if platform.system() != 'Windows':
+    try:
+        import uvloop
+        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+    except ImportError:
+        pass
+
+# Fix for Pyrogram calling get_event_loop() at import time in Python 3.10+
 try:
-    import uvloop
-    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-except ImportError:
-    pass
+    asyncio.get_event_loop()
+except RuntimeError:
+    asyncio.set_event_loop(asyncio.new_event_loop())
 
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
@@ -270,8 +279,12 @@ async def main():
     
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda: stop_event.set())
+    try:
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, lambda: stop_event.set())
+    except NotImplementedError:
+        pass  # Windows does not support add_signal_handler
+    
     
     await stop_event.wait()
     logger.warning("Graceful Shutdown...")
@@ -279,4 +292,9 @@ async def main():
     for _ in range(MAX_CONCURRENT_TASKS): await engine.queue.put(None)
     await app.stop()
 
-if __name__ == "__main__": asyncio.run(main())
+if __name__ == "__main__": 
+    try:
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        pass

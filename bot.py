@@ -13,22 +13,35 @@ from typing import Dict, Any, Optional, List, Tuple
 import platform
 import socket
 import subprocess
+import random
+import string
 
-# --- Senior Dev Tools: PO Token Bypass ---
+# --- Senior Dev: Hyper-Human Bypass Engine ---
 async def get_po_token_data():
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get("https://pobypass.vkrdown.com/api/get_pot") as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    # Structuring for yt-dlp extractor_args
-                    return {
-                        'po_token': data.get('po_token'),
-                        'visitor_data': data.get('visitor_data')
-                    }
-    except Exception as e:
-        logger.warning(f"Failed to fetch PO Token from API: {e}")
+    # Multiple API fallbacks to ensure token acquisition
+    apis = [
+        "https://pobypass.vkrdown.com/api/get_pot",
+        "https://yt-dlp-get-pot.vercel.app/api/v1/token",
+        "https://pot-generator-phi.vercel.app/api/v1/token"
+    ]
+    random.shuffle(apis)
+    
+    for api in apis:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(api, timeout=12) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return {
+                            'po_token': data.get('po_token') or data.get('poToken'),
+                            'visitor_data': data.get('visitor_data') or data.get('visitorData')
+                        }
+        except:
+            continue
     return None
+
+def generate_human_id():
+    return "".join(random.choices(string.ascii_letters + string.digits + "_-", k=11))
 
 # --- Performance: uvloop Integration ---
 if platform.system() != 'Windows':
@@ -220,43 +233,49 @@ class YouTubeEngineFinal:
                     asyncio.run_coroutine_threadsafe(msg.edit_text(prog_text), asyncio.get_event_loop())
                     last_upd = time.time()
 
-            # --- Senior Multi-Strategy Extraction + PO Token ---
+            # --- Hyper-Human Multi-Strategy Extraction ---
             tokens = await get_po_token_data()
-            if tokens:
-                logger.info("💎 PO Token & Visitor Data acquired from Bypass API.")
+            if not tokens:
+                logger.warning("⚠️ All PO Token APIs failed. Proceeding with browser impersonation only.")
             
             strategies = [
                 {'client': ['android'], 'headers': {'User-Agent': 'Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0'}},
                 {'client': ['web_embedded'], 'headers': {'Referer': 'https://www.youtube.com/embed/'}},
-                {'client': ['tvic'], 'headers': {'User-Agent': 'Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.196 Safari/537.36'}},
                 {'client': ['ios'], 'headers': {'User-Agent': 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)'}},
-                {'client': ['android_vr'], 'headers': {}},
-                {'client': ['mweb'], 'headers': {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'}}
+                {'client': ['tvic'], 'headers': {'User-Agent': 'Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.196 Safari/537.36'}},
             ]
 
             info = None
             last_err = ""
             
             for i, strategy in enumerate(strategies):
-                logger.info(f"🚀 Strategy #{i+1} ({strategy['client'][0]}): Attempting extraction...")
+                # 🛡️ Human Jitter
+                await asyncio.sleep(random.uniform(1.5, 3.5))
+                
+                logger.info(f"🎭 Strategy #{i+1} ({strategy['client'][0]}): Impersonating Human...")
                 
                 extractor_args = {'youtube': {'player_client': strategy['client'], 'player_skip': ['webpage', 'configs', 'js']}}
                 if tokens:
                     extractor_args['youtube']['po_token'] = [f"web+{tokens['po_token']}"]
                     extractor_args['youtube']['visitor_data'] = [tokens['visitor_data']]
 
+                headers = strategy['headers']
+                headers.update({
+                    'X-Goog-Visitor-Id': generate_human_id(),
+                    'Accept-Language': 'en-US,en;q=0.9',
+                })
+
                 ydl_opts = {
                     'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
                     'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
                     'quiet': True, 'no_warnings': True, 'nocheckcertificate': True,
                     'concurrent_fragment_downloads': 10,
-                    'progress_hooks': [dl_hook], 'retries': 5, 
+                    'progress_hooks': [dl_hook], 'retries': 3, 
                     'source_address': '0.0.0.0', 
-                    'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
+                    'impersonate': 'chrome', # 🚀 Senior: Real Browser TLS Fingerprint
                     'extractor_args': extractor_args,
-                    'http_headers': strategy['headers']
+                    'http_headers': headers
                 }
-
 
                 try:
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -264,15 +283,11 @@ class YouTubeEngineFinal:
                     if info: break
                 except Exception as e:
                     last_err = str(e)
-                    logger.warning(f"⚠️ Strategy #{i+1} failed: {last_err[:100]}")
+                    logger.warning(f"⚠️ Strategy #{i+1} failed: {last_err[:80]}")
                     continue
 
             if not info:
                 raise Exception(f"All 6 bypass strategies failed. YouTube is heavily blocking this IP.\nLast Error: {last_err[:200]}")
-
-
-
-
 
                 v_path = ydl.prepare_filename(info)
                 if not os.path.exists(v_path):

@@ -9,3 +9,4 @@ hachoir
 ffmpeg-python
 aiosqlite
 uvloop; platform_system != "Windows"
+curl-cffi

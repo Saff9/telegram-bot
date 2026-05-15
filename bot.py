@@ -132,7 +132,17 @@ class DatabaseManager:
     async def init(self):
         self.db = await aiosqlite.connect(self.path)
         await self.db.execute("CREATE TABLE IF NOT EXISTS jobs (id INTEGER PRIMARY KEY, url TEXT, status TEXT, chat_id INTEGER, msg_id INTEGER, created_at TIMESTAMP)")
+        await self.db.execute('CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)')
         await self.db.commit()
+
+    async def save_cookies(self, content: str):
+        await self.db.execute('INSERT OR REPLACE INTO config (key, value) VALUES ("cookies", ?)', (content,))
+        await self.db.commit()
+
+    async def get_cookies(self) -> Optional[str]:
+        async with self.db.execute('SELECT value FROM config WHERE key = "cookies"') as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else None
 
     async def add_job(self, url, cid, mid) -> int:
         c = await self.db.execute("INSERT INTO jobs (url, status, chat_id, msg_id, created_at) VALUES (?, ?, ?, ?, ?)", (url, JobStatus.PENDING.value, cid, mid, datetime.now()))
@@ -310,8 +320,11 @@ async def status(c, m):
 @app.on_message(filters.document & filters.private)
 async def handle_cookies(c, m):
     if m.document.file_name == "cookies.txt":
-        await m.download(file_name="cookies.txt")
-        await m.reply_text("✅ **cookies.txt uploaded and active!**\nExtraction will now use these credentials.")
+        path = await m.download(file_name="cookies.txt")
+        with open(path, 'r') as f:
+            content = f.read()
+        await db_mgr.save_cookies(content)
+        await m.reply_text("✅ **Cookies Saved to Database!**\nThey will now persist even if the bot restarts on Render.")
     else:
         await m.reply_text("❓ Please upload a file named `cookies.txt` to update bot cookies.")
 
@@ -342,12 +355,18 @@ async def start_web_server():
     logger.info(f"Dummy web server started on port {port}")
 
 async def main():
-    # 1. Handle Cookies for yt-dlp
-    cookies = os.getenv("COOKIES_CONTENT")
-    if cookies:
+    # Initialize DB first
+    await db_mgr.init()
+    
+    # 1. Load Cookies from DB (Priority) or Env
+    db_cookies = await db_mgr.get_cookies()
+    env_cookies = os.getenv("COOKIES_CONTENT")
+    
+    final_cookies = db_cookies or env_cookies
+    if final_cookies:
         with open("cookies.txt", "w") as f:
-            f.write(cookies)
-        logger.info("✅ Cookies loaded from environment variable.")
+            f.write(final_cookies)
+        logger.info("✅ Cookies loaded and active.")
 
     # 2. Start Dummy Web Server for Render IMMEDIATELY
     if os.getenv("PORT"):

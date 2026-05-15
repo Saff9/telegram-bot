@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     nodejs \
     tor \
     curl \
+    aria2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Configure Tor

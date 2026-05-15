@@ -263,6 +263,8 @@ class YouTubeEngineFinal:
                     'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
                     'quiet': True, 'nocheckcertificate': True, 'progress_hooks': [dl_hook],
                     'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
+                    'external_downloader': 'aria2c',
+                    'external_downloader_args': ['--min-split-size=1M', '--max-connection-per-server=16', '--split=16'],
                 }
                 try:
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:

@@ -205,30 +205,33 @@ class YouTubeEngineFinal:
             ydl_opts = {
                 'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
                 'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
-                'quiet': True, 'noprogress': True, 
+                'quiet': True, 'no_warnings': True, 'nocheckcertificate': True,
                 'concurrent_fragment_downloads': 10,
-                'progress_hooks': [dl_hook], 'retries': 15, 
-                'nocheckcertificate': True,
-                'ignoreerrors': False,
-                'logtostderr': False,
-                'no_warnings': True,
+                'progress_hooks': [dl_hook], 'retries': 20, 
+                'source_address': '0.0.0.0', # Force IPv4
                 'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['ios', 'android', 'web', 'mweb'],
+                        'player_client': ['android', 'ios'],
                         'player_skip': ['webpage', 'configs', 'js'],
                     }
+                },
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0',
+                    'Accept-Language': 'en-US,en;q=0.5',
                 }
             }
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 try:
-                    logger.info(f"Starting extraction for {url} (Cookies: {os.path.exists('cookies.txt')})")
+                    logger.info(f"Attempting aggressive extraction for {url} using Mobile Client...")
                     info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
                 except Exception as e:
-                    if "Sign in to confirm you’re not a bot" in str(e):
-                        raise Exception("🔒 **YouTube Bot Detection Triggered**\n\nCloud IPs (Render/AWS) are often blocked. To fix this:\n\n**Option A (Recommended):**\n1. Export cookies from your browser (Netscape format).\n2. **Send the `cookies.txt` file directly to this bot.**\n\n**Option B:**\nAdd a `COOKIES_CONTENT` env var in Render.")
-                    raise e
+                    logger.warning(f"Mobile client failed, trying TV client fallback: {e}")
+                    ydl_opts['extractor_args']['youtube']['player_client'] = ['tv']
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl_tv:
+                        info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl_tv.extract_info(url, download=True))
+
 
 
                 v_path = ydl.prepare_filename(info)

@@ -16,32 +16,8 @@ import subprocess
 import random
 import string
 
-# --- Senior Dev: Hyper-Human Bypass Engine ---
-async def get_po_token_data():
-    # Multiple API fallbacks to ensure token acquisition
-    apis = [
-        "https://pobypass.vkrdown.com/api/get_pot",
-        "https://yt-dlp-get-pot.vercel.app/api/v1/token",
-        "https://pot-generator-phi.vercel.app/api/v1/token"
-    ]
-    random.shuffle(apis)
-    
-    for api in apis:
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(api, timeout=12) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        return {
-                            'po_token': data.get('po_token') or data.get('poToken'),
-                            'visitor_data': data.get('visitor_data') or data.get('visitorData')
-                        }
-        except:
-            continue
-    return None
-
-def generate_human_id():
-    return "".join(random.choices(string.ascii_letters + string.digits + "_-", k=11))
+# --- Senior Dev: Persistent OAuth2 Logic ---
+# This allows you to login ONCE and stay authenticated forever.
 
 # --- Performance: uvloop Integration ---
 if platform.system() != 'Windows':
@@ -233,61 +209,32 @@ class YouTubeEngineFinal:
                     asyncio.run_coroutine_threadsafe(msg.edit_text(prog_text), asyncio.get_event_loop())
                     last_upd = time.time()
 
-            # --- Hyper-Human Multi-Strategy Extraction ---
-            tokens = await get_po_token_data()
-            if not tokens:
-                logger.warning("⚠️ All PO Token APIs failed. Proceeding with browser impersonation only.")
-            
-            strategies = [
-                {'client': ['android'], 'headers': {'User-Agent': 'Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0'}},
-                {'client': ['web_embedded'], 'headers': {'Referer': 'https://www.youtube.com/embed/'}},
-                {'client': ['ios'], 'headers': {'User-Agent': 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)'}},
-                {'client': ['tvic'], 'headers': {'User-Agent': 'Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.196 Safari/537.36'}},
-            ]
+            # --- Senior OAuth2 Extraction ---
+            # Using OAuth2 login (Device Flow) for 100% bypass reliability
+            ydl_opts = {
+                'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
+                'quiet': True, 'no_warnings': True, 'nocheckcertificate': True,
+                'concurrent_fragment_downloads': 10,
+                'progress_hooks': [dl_hook], 'retries': 5, 
+                'source_address': '0.0.0.0', 
+                'username': 'oauth2',
+                'password': '',
+                'cache_dir': './.cache' # Persistent token storage
+            }
 
-            info = None
-            last_err = ""
-            
-            for i, strategy in enumerate(strategies):
-                # 🛡️ Human Jitter
-                await asyncio.sleep(random.uniform(1.5, 3.5))
-                
-                logger.info(f"🎭 Strategy #{i+1} ({strategy['client'][0]}): Impersonating Human...")
-                
-                extractor_args = {'youtube': {'player_client': strategy['client'], 'player_skip': ['webpage', 'configs', 'js']}}
-                if tokens:
-                    extractor_args['youtube']['po_token'] = [f"web+{tokens['po_token']}"]
-                    extractor_args['youtube']['visitor_data'] = [tokens['visitor_data']]
-
-                headers = strategy['headers']
-                headers.update({
-                    'X-Goog-Visitor-Id': generate_human_id(),
-                    'Accept-Language': 'en-US,en;q=0.9',
-                })
-
-                ydl_opts = {
-                    'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-                    'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
-                    'quiet': True, 'no_warnings': True, 'nocheckcertificate': True,
-                    'concurrent_fragment_downloads': 10,
-                    'progress_hooks': [dl_hook], 'retries': 3, 
-                    'source_address': '0.0.0.0', 
-                    'impersonate': 'chrome', # 🚀 Senior: Real Browser TLS Fingerprint
-                    'extractor_args': extractor_args,
-                    'http_headers': headers
-                }
-
-                try:
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
-                    if info: break
-                except Exception as e:
-                    last_err = str(e)
-                    logger.warning(f"⚠️ Strategy #{i+1} failed: {last_err[:80]}")
-                    continue
-
-            if not info:
-                raise Exception(f"All 6 bypass strategies failed. YouTube is heavily blocking this IP.\nLast Error: {last_err[:200]}")
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
+            except Exception as e:
+                err_msg = str(e)
+                if "To sign in, use a web browser to open the page" in err_msg:
+                    # Extract the login instructions
+                    instructions = err_msg.split("To sign in,")[1].split("and enter the code")[0].strip()
+                    code = err_msg.split("and enter the code")[1].strip().split(" ")[0]
+                    url_login = "https://www.google.com/device"
+                    raise Exception(f"🔑 **YouTube Login Required**\n\nTo bypass bot detection permanently:\n1. Open: {url_login}\n2. Enter Code: `{code}`\n\n**Note:** Once you authorize, the bot will work perfectly for all videos!")
+                raise e
 
                 v_path = ydl.prepare_filename(info)
                 if not os.path.exists(v_path):

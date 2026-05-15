@@ -212,16 +212,24 @@ class YouTubeEngineFinal:
                 'ignoreerrors': False,
                 'logtostderr': False,
                 'no_warnings': True,
-                'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None
+                'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['ios', 'android', 'web', 'mweb'],
+                        'player_skip': ['webpage', 'configs', 'js'],
+                    }
+                }
             }
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 try:
+                    logger.info(f"Starting extraction for {url} (Cookies: {os.path.exists('cookies.txt')})")
                     info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
                 except Exception as e:
                     if "Sign in to confirm you’re not a bot" in str(e):
-                        raise Exception("🔒 **YouTube Bot Detection Triggered**\n\nCloud IPs (Render/AWS) are often blocked. To fix this:\n1. Export your YouTube cookies using a browser extension (e.g., 'EditThisCookie').\n2. Add a new environment variable `COOKIES_CONTENT` in Render and paste the cookie text there.")
+                        raise Exception("🔒 **YouTube Bot Detection Triggered**\n\nCloud IPs (Render/AWS) are often blocked. To fix this:\n\n**Option A (Recommended):**\n1. Export cookies from your browser (Netscape format).\n2. **Send the `cookies.txt` file directly to this bot.**\n\n**Option B:**\nAdd a `COOKIES_CONTENT` env var in Render.")
                     raise e
+
 
                 v_path = ydl.prepare_filename(info)
                 if not os.path.exists(v_path):
@@ -284,6 +292,14 @@ async def status(c, m):
     stats = await db_mgr.get_stats()
     text = "📊 **Bot Statistics**\n" + "\n".join([f"• {k.capitalize()}: `{v}`" for k, v in stats.items()])
     await m.reply_text(text)
+
+@app.on_message(filters.document & filters.private)
+async def handle_cookies(c, m):
+    if m.document.file_name == "cookies.txt":
+        await m.download(file_name="cookies.txt")
+        await m.reply_text("✅ **cookies.txt uploaded and active!**\nExtraction will now use these credentials.")
+    else:
+        await m.reply_text("❓ Please upload a file named `cookies.txt` to update bot cookies.")
 
 @app.on_message(filters.regex(r"(https?://)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)/.+") & filters.private)
 async def handle(c, m):

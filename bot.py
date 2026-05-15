@@ -16,37 +16,9 @@ import subprocess
 import random
 import string
 
-# --- Senior Dev: Resilient Invidious Fallback ---
-async def get_invidious_stream(url):
-    video_id = url.split("v=")[-1] if "v=" in url else url.split("/")[-1]
-    video_id = video_id.split("?")[0]
-    
-    try:
-        async with aiohttp.ClientSession() as session:
-            # Fetch healthy Invidious instances
-            async with session.get("https://api.invidious.io/instances.json?sort_by=health") as resp:
-                if resp.status != 200: return None
-                instances = await resp.json()
-                
-                # Try the top 5 healthy instances
-                for inst_data in instances[:8]:
-                    uri = inst_data[1].get('uri')
-                    if not uri: continue
-                    try:
-                        async with session.get(f"{uri}/api/v1/videos/{video_id}", timeout=10) as v_resp:
-                            if v_resp.status == 200:
-                                v_data = await v_resp.json()
-                                # Prefer high quality mp4
-                                for fmt in v_data.get('formatStreams', []):
-                                    if fmt.get('container') == 'mp4' and fmt.get('quality') == 'hd720':
-                                        return fmt['url'], v_data.get('title')
-                                # Fallback to any mp4
-                                for fmt in v_data.get('formatStreams', []):
-                                    if fmt.get('container') == 'mp4':
-                                        return fmt['url'], v_data.get('title')
-                    except: continue
-    except: pass
-    return None
+# --- Senior Dev: Resilient Extraction ---
+# Note: Cloud IPs (Render/AWS) are blocked by YouTube. 
+# Providing cookies via COOKIES_CONTENT env var is the ONLY 100% fix.
 
 # --- Performance: uvloop Integration ---
 if platform.system() != 'Windows':
@@ -238,55 +210,39 @@ class YouTubeEngineFinal:
                     asyncio.run_coroutine_threadsafe(msg.edit_text(prog_text), asyncio.get_event_loop())
                     last_upd = time.time()
 
-            # --- Senior Resilient Extraction Engine ---
-            info = None
-            last_err = ""
-            
-            # Step 1: Attempt Invidious Fallback (Highest success on Render)
-            logger.info(f"🚀 Attempting Invidious Proxy Extraction for {url}...")
-            inv_data = await get_invidious_stream(url)
-            if inv_data:
-                stream_url, title = inv_data
-                logger.info("💎 Invidious Stream acquired. Downloading directly...")
-                ydl_opts = {
-                    'format': 'best', 'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
-                    'quiet': True, 'nocheckcertificate': True,
-                }
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    # Download using the direct stream URL from Invidious
-                    info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(stream_url, download=True))
-                    # Override title from Invidious
-                    info['title'] = title
-
-            # Step 2: Fallback to Hyper-Human yt-dlp if Invidious fails
-            if not info:
-                logger.warning("⚠️ Invidious failed. Falling back to Hyper-Human yt-dlp...")
-                strategies = [
-                    {'client': ['android'], 'headers': {'User-Agent': 'Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0'}},
-                    {'client': ['web_embedded'], 'headers': {'Referer': 'https://www.youtube.com/embed/'}},
-                ]
-
-                for i, strategy in enumerate(strategies):
-                    ydl_opts = {
-                        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-                        'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
-                        'quiet': True, 'no_warnings': True, 'nocheckcertificate': True,
-                        'concurrent_fragment_downloads': 10,
-                        'progress_hooks': [dl_hook], 'retries': 3, 
-                        'source_address': '0.0.0.0', 
-                        'extractor_args': {'youtube': {'player_client': strategy['client'], 'player_skip': ['webpage', 'configs', 'js']}},
-                        'http_headers': strategy['headers']
+            # --- Rock-Solid Extraction Engine ---
+            # Optimized for Cookie & Mobile Client fallback
+            ydl_opts = {
+                'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
+                'quiet': True, 'no_warnings': True, 'nocheckcertificate': True,
+                'concurrent_fragment_downloads': 10,
+                'progress_hooks': [dl_hook], 'retries': 10, 
+                'source_address': '0.0.0.0', 
+                'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android', 'ios', 'tv'],
+                        'player_skip': ['webpage', 'configs', 'js'],
                     }
-                    try:
-                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                            info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
-                        if info: break
-                    except Exception as e:
-                        last_err = str(e)
-                        continue
+                }
+            }
 
-            if not info:
-                raise Exception(f"All extraction methods failed. Render IP is fully blocked.\nLast Error: {last_err[:150]}")
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
+            except Exception as e:
+                err = str(e)
+                if "Sign in to confirm you’re not a bot" in err or "152" in err or "403" in err:
+                    raise Exception(
+                        "🛑 **YouTube Blocked Render!**\n\n"
+                        "To fix this permanently, you MUST provide cookies:\n"
+                        "1. Install **'Get cookies.txt LOCALLY'** browser extension.\n"
+                        "2. Go to YouTube.com and export your cookies.\n"
+                        "3. **Upload the `cookies.txt` file directly to this bot** or add it to Render env var `COOKIES_CONTENT`.\n\n"
+                        "There is no programmatic bypass left for Render IPs."
+                    )
+                raise e
 
 
                 v_path = ydl.prepare_filename(info)

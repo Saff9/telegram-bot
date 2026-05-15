@@ -16,22 +16,40 @@ import subprocess
 import random
 import string
 
-# --- Senior Dev: Resilient Extraction ---
-async def get_po_token_data():
-    # Primary reliable API for PO Tokens
-    api = "https://yt-pobypass.vkrdown.com/api/get_pot"
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(api, timeout=10) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    return {
-                        'po_token': data.get('po_token') or data.get('poToken'),
-                        'visitor_data': data.get('visitor_data') or data.get('visitorData')
-                    }
-    except:
-        pass
-    return None
+# --- Senior Dev: God-Mode Cobalt Engine ---
+# Cobalt is the only tool currently bypassing YouTube's hardware-level IP blocks.
+async def get_cobalt_stream(url):
+    # Public high-performance cobalt instances
+    instances = [
+        "https://cobalt.lucataco.com",
+        "https://api.cobalt.tools",
+        "https://cobalt-api.vkrdown.com",
+        "https://cobalt.sh"
+    ]
+    random.shuffle(instances)
+    
+    for api in instances:
+        try:
+            headers = {
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+            payload = {
+                "url": url,
+                "videoQuality": "720", # Stable quality for Telegram
+                "audioFormat": "mp3",
+                "isNoTTWatermark": True
+            }
+            async with aiohttp.ClientSession() as session:
+                async with session.post(f"{api}/api/json", json=payload, headers=headers, timeout=15) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        if data.get("status") == "stream" or data.get("status") == "redirect":
+                            return data.get("url"), data.get("filename") or "video.mp4"
+        except:
+            continue
+    return None, None
 
 # --- Performance: uvloop Integration ---
 if platform.system() != 'Windows':
@@ -233,44 +251,35 @@ class YouTubeEngineFinal:
                     asyncio.run_coroutine_threadsafe(msg.edit_text(prog_text), asyncio.get_event_loop())
                     last_upd = time.time()
 
-            # --- Rock-Solid Extraction Engine ---
-            tokens = await get_po_token_data()
-            extractor_args = {
-                'youtube': {
-                    'player_client': ['android', 'ios', 'web_embedded'],
-                    'player_skip': ['webpage', 'configs', 'js'],
+            # --- God-Mode Cobalt Extraction ---
+            # This completely ignores local IP blocks by using a proxy-api network
+            stream_url, filename = await get_cobalt_stream(url)
+            
+            if stream_url:
+                logger.info("💎 Cobalt Proxy Stream acquired. Downloading directly...")
+                v_path = f"{DOWNLOAD_DIR}/{jid}_{filename}"
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(stream_url, timeout=300) as resp:
+                        if resp.status == 200:
+                            with open(v_path, 'wb') as f:
+                                f.write(await resp.read())
+                            info = {'title': filename, 'ext': 'mp4'} # Mock info for next steps
+            
+            # Step 2: Fallback to yt-dlp with Cookies if Cobalt fails
+            if not info:
+                logger.warning("⚠️ Cobalt failed. Falling back to yt-dlp with cookies...")
+                ydl_opts = {
+                    'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                    'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
+                    'quiet': True, 'no_warnings': True, 'nocheckcertificate': True,
+                    'progress_hooks': [dl_hook], 'retries': 3,
+                    'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
                 }
-            }
-            if tokens:
-                extractor_args['youtube']['po_token'] = [f"web+{tokens['po_token']}"]
-                extractor_args['youtube']['visitor_data'] = [tokens['visitor_data']]
-
-            ydl_opts = {
-                'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-                'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
-                'quiet': True, 'no_warnings': True, 'nocheckcertificate': True,
-                'concurrent_fragment_downloads': 10,
-                'progress_hooks': [dl_hook], 'retries': 5, 
-                'source_address': '0.0.0.0', 
-                'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-                'extractor_args': extractor_args
-            }
-
-            try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
-            except Exception as e:
-                err = str(e)
-                # If even with cookies it fails, try TV client (sometimes less restricted)
-                if "Sign in" in err or "152" in err:
-                    logger.warning("⚠️ Mobile/Web clients blocked even with cookies. Trying TV fallback...")
-                    ydl_opts['extractor_args']['youtube']['player_client'] = ['tv']
-                    try:
-                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                            info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
-                    except: raise e # If TV fails, re-raise original
-                else:
-                    raise e
+                try:
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
+                except Exception as e:
+                    raise Exception(f"All extraction methods failed. YouTube has successfully blocked this IP and session.\nError: {str(e)[:100]}")
 
 
                 v_path = ydl.prepare_filename(info)

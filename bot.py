@@ -243,6 +243,7 @@ class YouTubeEngineFinal:
                     last_upd = time.time()
 
             # --- Nuclear Extraction Engine ---
+            info = None
             # 1. Cobalt (Fastest)
             stream_url, filename = await get_cobalt_stream(url)
             if stream_url:

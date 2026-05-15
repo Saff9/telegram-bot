@@ -253,6 +253,7 @@ class YouTubeEngineFinal:
 
             # --- God-Mode Cobalt Extraction ---
             # This completely ignores local IP blocks by using a proxy-api network
+            info = None
             stream_url, filename = await get_cobalt_stream(url)
             
             if stream_url:

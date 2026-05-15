@@ -14,6 +14,22 @@ import platform
 import socket
 import subprocess
 
+# --- Senior Dev Tools: PO Token Bypass ---
+async def get_po_token_data():
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://pobypass.vkrdown.com/api/get_pot") as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    # Structuring for yt-dlp extractor_args
+                    return {
+                        'po_token': data.get('po_token'),
+                        'visitor_data': data.get('visitor_data')
+                    }
+    except Exception as e:
+        logger.warning(f"Failed to fetch PO Token from API: {e}")
+    return None
+
 # --- Performance: uvloop Integration ---
 if platform.system() != 'Windows':
     try:
@@ -204,7 +220,11 @@ class YouTubeEngineFinal:
                     asyncio.run_coroutine_threadsafe(msg.edit_text(prog_text), asyncio.get_event_loop())
                     last_upd = time.time()
 
-            # --- Senior Multi-Strategy Extraction ---
+            # --- Senior Multi-Strategy Extraction + PO Token ---
+            tokens = await get_po_token_data()
+            if tokens:
+                logger.info("💎 PO Token & Visitor Data acquired from Bypass API.")
+            
             strategies = [
                 {'client': ['android'], 'headers': {'User-Agent': 'Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0'}},
                 {'client': ['web_embedded'], 'headers': {'Referer': 'https://www.youtube.com/embed/'}},
@@ -219,6 +239,12 @@ class YouTubeEngineFinal:
             
             for i, strategy in enumerate(strategies):
                 logger.info(f"🚀 Strategy #{i+1} ({strategy['client'][0]}): Attempting extraction...")
+                
+                extractor_args = {'youtube': {'player_client': strategy['client'], 'player_skip': ['webpage', 'configs', 'js']}}
+                if tokens:
+                    extractor_args['youtube']['po_token'] = [f"web+{tokens['po_token']}"]
+                    extractor_args['youtube']['visitor_data'] = [tokens['visitor_data']]
+
                 ydl_opts = {
                     'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
                     'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
@@ -227,9 +253,10 @@ class YouTubeEngineFinal:
                     'progress_hooks': [dl_hook], 'retries': 5, 
                     'source_address': '0.0.0.0', 
                     'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-                    'extractor_args': {'youtube': {'player_client': strategy['client'], 'player_skip': ['webpage', 'configs', 'js']}},
+                    'extractor_args': extractor_args,
                     'http_headers': strategy['headers']
                 }
+
 
                 try:
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:

@@ -40,12 +40,22 @@ load_dotenv()
 
 # --- Configuration & Constants ---
 API_ID = os.getenv("API_ID")
-if API_ID and API_ID.strip().isdigit():
-    API_ID = int(API_ID.strip())
+if API_ID:
+    API_ID = API_ID.strip().strip('"').strip("'")
+    if API_ID.isdigit():
+        API_ID = int(API_ID)
 
 API_HASH = os.getenv("API_HASH")
+if API_HASH:
+    API_HASH = API_HASH.strip().strip('"').strip("'")
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+if BOT_TOKEN:
+    BOT_TOKEN = BOT_TOKEN.strip().strip('"').strip("'")
+
 CHANNEL_ID = os.getenv("CHANNEL_ID")
+if CHANNEL_ID:
+    CHANNEL_ID = CHANNEL_ID.strip().strip('"').strip("'")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 DOWNLOAD_DIR = "downloads"
 DB_PATH = "bot_data.db"
@@ -290,19 +300,27 @@ async def start_web_server():
     logger.info(f"Dummy web server started on port {port}")
 
 async def main():
+    # 1. Start Dummy Web Server for Render IMMEDIATELY
+    if os.getenv("PORT"):
+        await start_web_server()
+
+    # 2. Check variables
     if not API_ID or not API_HASH:
         logger.error("API_ID or API_HASH is missing! Please get them from my.telegram.org and set them in your environment variables.")
         
     if not os.path.exists(DOWNLOAD_DIR): os.makedirs(DOWNLOAD_DIR)
     await db_mgr.init()
     for i in range(MAX_CONCURRENT_TASKS): asyncio.create_task(engine.worker(i))
-    await app.start()
-    await app.set_bot_commands([BotCommand("start", "Main Menu"), BotCommand("status", "System Stats")])
     
-    # Start Dummy Web Server for Render
-    if os.getenv("PORT"):
-        await start_web_server()
-        
+    # 3. Start Pyrogram
+    try:
+        await app.start()
+        await app.set_bot_commands([BotCommand("start", "Main Menu"), BotCommand("status", "System Stats")])
+    except Exception as e:
+        logger.error(f"Failed to start Pyrogram: {e}")
+        logger.error("Your API_ID or API_HASH might still be invalid. Please make sure you are NOT using someone else's or putting random text.")
+        # We don't exit here so the Render web server stays alive to show the error in logs instead of endless restarts
+    
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
     try:

@@ -40,6 +40,9 @@ load_dotenv()
 
 # --- Configuration & Constants ---
 API_ID = os.getenv("API_ID")
+if API_ID and API_ID.strip().isdigit():
+    API_ID = int(API_ID.strip())
+
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
@@ -270,13 +273,36 @@ async def handle(c, m):
     jid = await db_mgr.add_job(m.text, m.chat.id, s.id)
     await engine.queue.put((jid, m.text, s))
 
+async def start_web_server():
+    from aiohttp import web
+    async def handle_ping(request):
+        return web.Response(text="Bot is running!")
+    
+    web_app = web.Application()
+    web_app.router.add_get('/', handle_ping)
+    web_app.router.add_get('/health', handle_ping)
+    
+    runner = web.AppRunner(web_app)
+    await runner.setup()
+    port = int(os.getenv("PORT", 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    logger.info(f"Dummy web server started on port {port}")
+
 async def main():
+    if not API_ID or not API_HASH:
+        logger.error("API_ID or API_HASH is missing! Please get them from my.telegram.org and set them in your environment variables.")
+        
     if not os.path.exists(DOWNLOAD_DIR): os.makedirs(DOWNLOAD_DIR)
     await db_mgr.init()
     for i in range(MAX_CONCURRENT_TASKS): asyncio.create_task(engine.worker(i))
     await app.start()
     await app.set_bot_commands([BotCommand("start", "Main Menu"), BotCommand("status", "System Stats")])
     
+    # Start Dummy Web Server for Render
+    if os.getenv("PORT"):
+        await start_web_server()
+        
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
     try:

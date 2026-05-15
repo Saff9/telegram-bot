@@ -17,8 +17,21 @@ import random
 import string
 
 # --- Senior Dev: Resilient Extraction ---
-# Note: Cloud IPs (Render/AWS) are blocked by YouTube. 
-# Providing cookies via COOKIES_CONTENT env var is the ONLY 100% fix.
+async def get_po_token_data():
+    # Primary reliable API for PO Tokens
+    api = "https://yt-pobypass.vkrdown.com/api/get_pot"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(api, timeout=10) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return {
+                        'po_token': data.get('po_token') or data.get('poToken'),
+                        'visitor_data': data.get('visitor_data') or data.get('visitorData')
+                    }
+    except:
+        pass
+    return None
 
 # --- Performance: uvloop Integration ---
 if platform.system() != 'Windows':
@@ -221,21 +234,26 @@ class YouTubeEngineFinal:
                     last_upd = time.time()
 
             # --- Rock-Solid Extraction Engine ---
-            # Optimized for Cookie & Mobile Client fallback
+            tokens = await get_po_token_data()
+            extractor_args = {
+                'youtube': {
+                    'player_client': ['android', 'ios', 'web_embedded'],
+                    'player_skip': ['webpage', 'configs', 'js'],
+                }
+            }
+            if tokens:
+                extractor_args['youtube']['po_token'] = [f"web+{tokens['po_token']}"]
+                extractor_args['youtube']['visitor_data'] = [tokens['visitor_data']]
+
             ydl_opts = {
                 'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
                 'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
                 'quiet': True, 'no_warnings': True, 'nocheckcertificate': True,
                 'concurrent_fragment_downloads': 10,
-                'progress_hooks': [dl_hook], 'retries': 10, 
+                'progress_hooks': [dl_hook], 'retries': 5, 
                 'source_address': '0.0.0.0', 
                 'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['android', 'ios', 'tv'],
-                        'player_skip': ['webpage', 'configs', 'js'],
-                    }
-                }
+                'extractor_args': extractor_args
             }
 
             try:
@@ -243,16 +261,16 @@ class YouTubeEngineFinal:
                     info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
             except Exception as e:
                 err = str(e)
-                if "Sign in to confirm you’re not a bot" in err or "152" in err or "403" in err:
-                    raise Exception(
-                        "🛑 **YouTube Blocked Render!**\n\n"
-                        "To fix this permanently, you MUST provide cookies:\n"
-                        "1. Install **'Get cookies.txt LOCALLY'** browser extension.\n"
-                        "2. Go to YouTube.com and export your cookies.\n"
-                        "3. **Upload the `cookies.txt` file directly to this bot** or add it to Render env var `COOKIES_CONTENT`.\n\n"
-                        "There is no programmatic bypass left for Render IPs."
-                    )
-                raise e
+                # If even with cookies it fails, try TV client (sometimes less restricted)
+                if "Sign in" in err or "152" in err:
+                    logger.warning("⚠️ Mobile/Web clients blocked even with cookies. Trying TV fallback...")
+                    ydl_opts['extractor_args']['youtube']['player_client'] = ['tv']
+                    try:
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
+                    except: raise e # If TV fails, re-raise original
+                else:
+                    raise e
 
 
                 v_path = ydl.prepare_filename(info)

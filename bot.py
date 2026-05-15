@@ -11,6 +11,30 @@ from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 
 import platform
+import socket
+import subprocess
+
+# --- Senior Dev Tools: Proxy & Tor ---
+class TorManager:
+    @staticmethod
+    def start():
+        try:
+            subprocess.Popen(["tor"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            logger.info("🧅 Tor Proxy started in background.")
+        except:
+            logger.warning("Tor binary not found. Running without Tor.")
+
+    @staticmethod
+    def renew_identity():
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.connect(("127.0.0.1", 9051))
+                s.send(b'AUTHENTICATE ""\r\n')
+                s.send(b'SIGNAL NEWNYM\r\n')
+            logger.info("🔄 Tor identity renewed (New IP).")
+            time.sleep(2) # Wait for Tor to switch
+        except Exception as e:
+            logger.error(f"Failed to renew Tor identity: {e}")
 
 # --- Performance: uvloop Integration ---
 if platform.system() != 'Windows':
@@ -209,10 +233,11 @@ class YouTubeEngineFinal:
                 'concurrent_fragment_downloads': 10,
                 'progress_hooks': [dl_hook], 'retries': 20, 
                 'source_address': '0.0.0.0', # Force IPv4
+                'proxy': 'socks5://127.0.0.1:9050',
                 'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android', 'ios'],
+                        'player_client': ['android', 'ios', 'tv'],
                         'player_skip': ['webpage', 'configs', 'js'],
                     }
                 },
@@ -222,15 +247,22 @@ class YouTubeEngineFinal:
                 }
             }
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                try:
-                    logger.info(f"Attempting aggressive extraction for {url} using Mobile Client...")
-                    info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
-                except Exception as e:
-                    logger.warning(f"Mobile client failed, trying TV client fallback: {e}")
-                    ydl_opts['extractor_args']['youtube']['player_client'] = ['tv']
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl_tv:
-                        info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl_tv.extract_info(url, download=True))
+            async def attempt_extraction(opts):
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    return await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
+
+            try:
+                logger.info(f"Attempting Tor-proxied extraction for {url}...")
+                info = await attempt_extraction(ydl_opts)
+            except Exception as e:
+                if "Sign in to confirm you’re not a bot" in str(e) or "403" in str(e):
+                    logger.warning("Tor IP blocked or Bot detection hit. Renewing Tor identity and retrying...")
+                    TorManager.renew_identity()
+                    # Try one more time with new Tor IP
+                    info = await attempt_extraction(ydl_opts)
+                else:
+                    raise e
+
 
 
 
@@ -338,7 +370,10 @@ async def main():
             f.write(cookies)
         logger.info("✅ Cookies loaded from environment variable.")
 
-    # 2. Start Dummy Web Server for Render IMMEDIATELY
+    # 2. Start Tor Proxy for Senior Bypass
+    TorManager.start()
+
+    # 3. Start Dummy Web Server for Render IMMEDIATELY
     if os.getenv("PORT"):
         await start_web_server()
 

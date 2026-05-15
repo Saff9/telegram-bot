@@ -8,7 +8,14 @@ RUN apt-get update && apt-get install -y \
     libjpeg-dev \
     zlib1g-dev \
     nodejs \
+    tor \
+    curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Configure Tor
+RUN echo "ControlPort 9051" >> /etc/tor/torrc && \
+    echo "CookieAuthentication 0" >> /etc/tor/torrc
+
 
 # Set working directory
 WORKDIR /app

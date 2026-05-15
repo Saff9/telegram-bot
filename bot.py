@@ -14,28 +14,6 @@ import platform
 import socket
 import subprocess
 
-# --- Senior Dev Tools: Proxy & Tor ---
-class TorManager:
-    @staticmethod
-    def start():
-        try:
-            subprocess.Popen(["tor"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            logger.info("🧅 Tor Proxy started in background.")
-        except:
-            logger.warning("Tor binary not found. Running without Tor.")
-
-    @staticmethod
-    def renew_identity():
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.connect(("127.0.0.1", 9051))
-                s.send(b'AUTHENTICATE ""\r\n')
-                s.send(b'SIGNAL NEWNYM\r\n')
-            logger.info("🔄 Tor identity renewed (New IP).")
-            time.sleep(2) # Wait for Tor to switch
-        except Exception as e:
-            logger.error(f"Failed to renew Tor identity: {e}")
-
 # --- Performance: uvloop Integration ---
 if platform.system() != 'Windows':
     try:
@@ -226,42 +204,45 @@ class YouTubeEngineFinal:
                     asyncio.run_coroutine_threadsafe(msg.edit_text(prog_text), asyncio.get_event_loop())
                     last_upd = time.time()
 
-            ydl_opts = {
-                'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-                'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
-                'quiet': True, 'no_warnings': True, 'nocheckcertificate': True,
-                'concurrent_fragment_downloads': 10,
-                'progress_hooks': [dl_hook], 'retries': 20, 
-                'source_address': '0.0.0.0', # Force IPv4
-                'proxy': 'socks5://127.0.0.1:9050',
-                'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['android', 'ios', 'tv'],
-                        'player_skip': ['webpage', 'configs', 'js'],
-                    }
-                },
-                'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0',
-                    'Accept-Language': 'en-US,en;q=0.5',
+            # --- Senior Multi-Strategy Extraction ---
+            strategies = [
+                {'client': ['android'], 'headers': {'User-Agent': 'Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0'}},
+                {'client': ['web_embedded'], 'headers': {'Referer': 'https://www.youtube.com/embed/'}},
+                {'client': ['tvic'], 'headers': {'User-Agent': 'Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.196 Safari/537.36'}},
+                {'client': ['ios'], 'headers': {'User-Agent': 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)'}},
+                {'client': ['android_vr'], 'headers': {}},
+                {'client': ['mweb'], 'headers': {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'}}
+            ]
+
+            info = None
+            last_err = ""
+            
+            for i, strategy in enumerate(strategies):
+                logger.info(f"🚀 Strategy #{i+1} ({strategy['client'][0]}): Attempting extraction...")
+                ydl_opts = {
+                    'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                    'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
+                    'quiet': True, 'no_warnings': True, 'nocheckcertificate': True,
+                    'concurrent_fragment_downloads': 10,
+                    'progress_hooks': [dl_hook], 'retries': 5, 
+                    'source_address': '0.0.0.0', 
+                    'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
+                    'extractor_args': {'youtube': {'player_client': strategy['client'], 'player_skip': ['webpage', 'configs', 'js']}},
+                    'http_headers': strategy['headers']
                 }
-            }
 
-            async def attempt_extraction(opts):
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    return await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
+                try:
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
+                    if info: break
+                except Exception as e:
+                    last_err = str(e)
+                    logger.warning(f"⚠️ Strategy #{i+1} failed: {last_err[:100]}")
+                    continue
 
-            try:
-                logger.info(f"Attempting Tor-proxied extraction for {url}...")
-                info = await attempt_extraction(ydl_opts)
-            except Exception as e:
-                if "Sign in to confirm you’re not a bot" in str(e) or "403" in str(e):
-                    logger.warning("Tor IP blocked or Bot detection hit. Renewing Tor identity and retrying...")
-                    TorManager.renew_identity()
-                    # Try one more time with new Tor IP
-                    info = await attempt_extraction(ydl_opts)
-                else:
-                    raise e
+            if not info:
+                raise Exception(f"All 6 bypass strategies failed. YouTube is heavily blocking this IP.\nLast Error: {last_err[:200]}")
+
 
 
 
@@ -370,10 +351,7 @@ async def main():
             f.write(cookies)
         logger.info("✅ Cookies loaded from environment variable.")
 
-    # 2. Start Tor Proxy for Senior Bypass
-    TorManager.start()
-
-    # 3. Start Dummy Web Server for Render IMMEDIATELY
+    # 2. Start Dummy Web Server for Render IMMEDIATELY
     if os.getenv("PORT"):
         await start_web_server()
 

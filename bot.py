@@ -222,7 +222,13 @@ async def handle_cookies(c, m):
         # Write to disk immediately so it's active without restart
         with open("cookies.txt", "w") as f:
             f.write(content)
-        await m.reply_text("✅ **Cookies Saved and Activated!**\nThey will now persist and are active immediately without restarting.")
+        await m.reply_text(
+            "✅ **Cookies Saved and Activated!**\n\n"
+            "⚠️ **Render Persistence Warning:** Because Render's filesystem is temporary, these cookies will be lost "
+            "whenever the bot restarts or redeploys.\n\n"
+            "To make them **100% permanent**, add an Environment Variable in your Render Dashboard named `COOKIES_CONTENT` "
+            "and paste the complete content of your `cookies.txt` file as the value."
+        )
     else:
         await m.reply_text("❓ Please upload a file named `cookies.txt` to update bot cookies.")
 

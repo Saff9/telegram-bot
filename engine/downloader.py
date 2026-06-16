@@ -114,6 +114,11 @@ async def download_video(url, jid, dl_hook, download_dir):
         logger.info("🛡️ Trying yt-dlp WITHOUT Cookies...")
         ydl_opts_nocookies = ydl_opts.copy()
         ydl_opts_nocookies['cookiefile'] = None
+        ydl_opts_nocookies['extractor_args'] = {
+            'youtube': {
+                'player_client': ['ios', 'android', 'android_vr', 'mweb'],
+            }
+        }
         try:
             with yt_dlp.YoutubeDL(ydl_opts_nocookies) as ydl:
                 info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
@@ -158,6 +163,11 @@ async def download_video(url, jid, dl_hook, download_dir):
             try:
                 ydl_opts_nocookies = ydl_opts_proxy.copy()
                 ydl_opts_nocookies['cookiefile'] = None
+                ydl_opts_nocookies['extractor_args'] = {
+                    'youtube': {
+                        'player_client': ['ios', 'android', 'android_vr', 'mweb'],
+                    }
+                }
                 with yt_dlp.YoutubeDL(ydl_opts_nocookies) as ydl:
                     info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
                     if info:

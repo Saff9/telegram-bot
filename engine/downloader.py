@@ -113,12 +113,21 @@ async def download_video(url, jid, dl_hook, download_dir):
         
         for proxy in proxies[:15]:
             logger.info(f"🔄 Retrying with Proxy: {proxy}")
-            ydl_opts['proxy'] = proxy
+            
+            # Create a proxy-specific copy of ydl_opts
+            ydl_opts_proxy = ydl_opts.copy()
+            ydl_opts_proxy['proxy'] = proxy
+            
+            # Disable aria2c for proxies because aria2c doesn't support socks5
+            if 'external_downloader' in ydl_opts_proxy:
+                del ydl_opts_proxy['external_downloader']
+            if 'external_downloader_args' in ydl_opts_proxy:
+                del ydl_opts_proxy['external_downloader_args']
             
             # Try with cookies if they exist
-            if ydl_opts['cookiefile']:
+            if ydl_opts_proxy['cookiefile']:
                 try:
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    with yt_dlp.YoutubeDL(ydl_opts_proxy) as ydl:
                         info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
                         if info:
                             v_path = ydl.prepare_filename(info)
@@ -129,7 +138,7 @@ async def download_video(url, jid, dl_hook, download_dir):
             
             # Try without cookies on the same proxy
             try:
-                ydl_opts_nocookies = ydl_opts.copy()
+                ydl_opts_nocookies = ydl_opts_proxy.copy()
                 ydl_opts_nocookies['cookiefile'] = None
                 with yt_dlp.YoutubeDL(ydl_opts_nocookies) as ydl:
                     info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))

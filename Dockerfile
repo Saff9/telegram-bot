@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     tor \
     curl \
     aria2 \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Configure Tor

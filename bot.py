@@ -5,18 +5,18 @@ import logging
 import signal
 import platform
 
-# Fix for Pyrogram calling get_event_loop() at import time in Python 3.10+
-try:
-    asyncio.get_event_loop()
-except RuntimeError:
-    asyncio.set_event_loop(asyncio.new_event_loop())
-
 if platform.system() != 'Windows':
     try:
         import uvloop
         asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     except ImportError:
         pass
+
+# Fix for Pyrogram calling get_event_loop() at import time in Python 3.10+
+try:
+    asyncio.get_event_loop()
+except RuntimeError:
+    asyncio.set_event_loop(asyncio.new_event_loop())
 
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, BotCommand

@@ -71,6 +71,8 @@ async def download_video(url, jid, dl_hook, download_dir):
             'nocheckcertificate': True,
             'progress_hooks': [dl_hook],
             'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
+            'allow_remote_components': True,
+            'remote_components': 'ejs:github',
             'extractor_args': {
                 'youtube': {
                     'player_client': ['web', 'mweb', 'ios', 'android'],

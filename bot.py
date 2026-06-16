@@ -258,18 +258,31 @@ class YouTubeEngineFinal:
             # 2. yt-dlp with Cookies (Authenticated)
             if not info:
                 logger.info("🛡️ Trying yt-dlp + Cookies...")
+                aria2_available = shutil.which('aria2c') is not None
                 ydl_opts = {
                     'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
                     'outtmpl': f'{DOWNLOAD_DIR}/%(id)s.%(ext)s',
-                    'quiet': True, 'nocheckcertificate': True, 'progress_hooks': [dl_hook],
+                    'quiet': True,
+                    'nocheckcertificate': True,
+                    'progress_hooks': [dl_hook],
                     'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-                    'external_downloader': 'aria2c',
-                    'external_downloader_args': ['--min-split-size=1M', '--max-connection-per-server=16', '--split=16'],
+                    'extractor_args': {
+                        'youtube': {
+                            'player_client': ['web', 'mweb', 'ios', 'android'],
+                        }
+                    },
                 }
+                if aria2_available:
+                    ydl_opts['external_downloader'] = 'aria2c'
+                    ydl_opts['external_downloader_args'] = ['--min-split-size=1M', '--max-connection-per-server=16', '--split=16']
+                
                 try:
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                         info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
-                except: pass
+                        if info:
+                            v_path = ydl.prepare_filename(info)
+                except Exception as e:
+                    logger.error(f"Standard yt-dlp download failed: {e}", exc_info=True)
 
             # 3. Proxy-Brute Force (The Hammer)
             if not info:
@@ -283,20 +296,25 @@ class YouTubeEngineFinal:
                     try:
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
+                            if info:
+                                v_path = ydl.prepare_filename(info)
                         if info: 
                             logger.info("✅ Proxy Brute-Force Successful!")
                             break
-                    except: continue
+                    except Exception as e:
+                        logger.warning(f"Proxy {proxy} download failed: {e}")
+                        continue
 
             if not info:
-                raise Exception("💀 All 30+ extraction strategies failed. YouTube's bot-detection is currently impenetrable for this URL on cloud IPs.")
+                raise Exception("💀 All download strategies failed. YouTube's bot-detection blocked this download. Please upload a fresh 'cookies.txt' file to verify you are not a bot.")
 
-
-                v_path = ydl.prepare_filename(info)
-                if not os.path.exists(v_path):
-                    base = os.path.splitext(v_path)[0]
-                    for e in ['.mp4', '.mkv', '.webm']:
-                        if os.path.exists(base + e): v_path = base + e; break
+            # Resolve actual downloaded file path if it was changed (e.g. merged to .mkv)
+            if v_path and not os.path.exists(v_path):
+                base = os.path.splitext(v_path)[0]
+                for e in ['.mp4', '.mkv', '.webm']:
+                    if os.path.exists(base + e):
+                        v_path = base + e
+                        break
 
             # 2. AI Metadata
             await self.db.update_status(jid, JobStatus.AI_PROCESSING.value)
@@ -361,7 +379,10 @@ async def handle_cookies(c, m):
         with open(path, 'r') as f:
             content = f.read()
         await db_mgr.save_cookies(content)
-        await m.reply_text("✅ **Cookies Saved to Database!**\nThey will now persist even if the bot restarts on Render.")
+        # Write to disk immediately so it's active without restart
+        with open("cookies.txt", "w") as f:
+            f.write(content)
+        await m.reply_text("✅ **Cookies Saved and Activated!**\nThey will now persist and are active immediately without restarting.")
     else:
         await m.reply_text("❓ Please upload a file named `cookies.txt` to update bot cookies.")
 

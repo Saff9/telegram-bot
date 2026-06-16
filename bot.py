@@ -473,6 +473,15 @@ async def main():
     try:
         await app.start()
         await app.set_bot_commands([BotCommand("start", "Main Menu"), BotCommand("status", "System Stats")])
+        if CHANNEL_ID:
+            try:
+                await app.send_message(
+                    chat_id=CHANNEL_ID,
+                    text="🚀 **YT-Engine Pro Online!**\n\n✅ Connected to Telegram API\n✅ Workers active\n✅ Web server running\n\nReady to sync YouTube content."
+                )
+                logger.info("Sent startup status message to CHANNEL_ID.")
+            except Exception as ex:
+                logger.warning(f"Failed to send startup status message to channel: {ex}")
     except Exception as e:
         logger.error(f"Failed to start Pyrogram: {e}")
         logger.error("Your API_ID or API_HASH might still be invalid. Please make sure you are NOT using someone else's or putting random text.")

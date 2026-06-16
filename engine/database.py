@@ -38,7 +38,7 @@ class DatabaseManager:
         return c.lastrowid
 
     async def get_job_by_url(self, url):
-        c = await self.db.execute("SELECT status FROM jobs WHERE url = ? AND status != 'failed' LIMIT 1", (url,))
+        c = await self.db.execute("SELECT status FROM jobs WHERE url = ? AND status IN ('pending', 'downloading', 'ai_processing', 'processing', 'uploading') LIMIT 1", (url,))
         return await c.fetchone()
 
     async def update_status(self, jid, status):

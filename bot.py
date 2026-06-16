@@ -155,7 +155,7 @@ async def handle(c, m):
     # Duplicate Check
     existing = await db_mgr.get_job_by_url(m.text)
     if existing: 
-        return await m.reply_text("⚠️ This video is already in queue or processed.")
+        return await m.reply_text("⚠️ This video is currently being processed or downloading.")
     
     s = await m.reply_text("🔍 **Adding to Queue...**")
     jid = await db_mgr.add_job(m.text, m.chat.id, s.id)

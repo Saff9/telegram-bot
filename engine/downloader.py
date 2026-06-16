@@ -65,14 +65,14 @@ async def download_video(url, jid, dl_hook, download_dir):
         logger.info("🛡️ Trying yt-dlp + Cookies...")
         aria2_available = shutil.which('aria2c') is not None
         ydl_opts = {
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'format': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]/best',
             'outtmpl': f'{download_dir}/%(id)s.%(ext)s',
             'quiet': True,
             'nocheckcertificate': True,
             'progress_hooks': [dl_hook],
             'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
             'allow_remote_components': True,
-            'remote_components': 'ejs:github',
+            'remote_components': ['ejs:github'],
             'extractor_args': {
                 'youtube': {
                     'player_client': ['web', 'mweb', 'ios', 'android'],

@@ -11,9 +11,12 @@ logger = logging.getLogger("YT_ENGINE_DOWNLOADER")
 # --- Cobalt Stream Extraction ---
 async def get_cobalt_stream(url):
     hardcoded = [
-        "https://api.cobalt.tools",
-        "https://cobalt.lucataco.com",
-        "https://cobalt-api.vkrdown.com"
+        "https://cblt.fariz.dev",
+        "https://coapi.kelig.me",
+        "https://api.yt.corebyte.me",
+        "https://cobalt-api.luver.pw",
+        "https://cobapi.elrant.team",
+        "https://api.seventyhost.net"
     ]
     apis = []
     try:

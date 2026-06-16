@@ -20,6 +20,7 @@ except RuntimeError:
 
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
+from pyrogram.errors import FloodWait
 
 # Import modular components
 from engine.config import (
@@ -54,7 +55,16 @@ class YouTubeEngineFinal:
             except Exception as e:
                 logger.exception(f"Job #{jid} failed")
                 try: 
-                    await msg.edit_text(f"❌ **Job Failed**\n`{str(e)[:150]}`")
+                    async def send_fail():
+                        while True:
+                            try:
+                                await msg.edit_text(f"❌ **Job Failed**\n`{str(e)[:150]}`")
+                                break
+                            except FloodWait as f:
+                                await asyncio.sleep(f.value + 2)
+                            except:
+                                break
+                    await send_fail()
                 except: 
                     pass
                 await self.db.update_status(jid, JobStatus.FAILED.value)
@@ -66,6 +76,26 @@ class YouTubeEngineFinal:
                     })
             finally: 
                 self.queue.task_done()
+
+    async def start_cleanup_task(self):
+        logger.info("🧹 Background temp-file cleanup task started.")
+        while self.running:
+            try:
+                await asyncio.sleep(1800) # Run every 30 minutes
+                now = time.time()
+                if os.path.exists(DOWNLOAD_DIR):
+                    for filename in os.listdir(DOWNLOAD_DIR):
+                        file_path = os.path.join(DOWNLOAD_DIR, filename)
+                        if os.path.isfile(file_path):
+                            # Delete files older than 1 hour (3600 seconds)
+                            if now - os.path.getmtime(file_path) > 3600:
+                                try:
+                                    os.remove(file_path)
+                                    logger.info(f"🧹 Cleaned up old temp file: {filename}")
+                                except Exception as e:
+                                    logger.warning(f"Failed to delete temp file {filename}: {e}")
+            except Exception as e:
+                logger.warning(f"Error in cleanup task: {e}")
 
     async def _process(self, jid, url, msg):
         v_path, t_path = None, None
@@ -99,10 +129,16 @@ class YouTubeEngineFinal:
             loop = asyncio.get_running_loop()
             
             async def safe_edit(text):
-                try:
-                    await msg.edit_text(text)
-                except Exception as e:
-                    logger.warning(f"Failed to edit message for job {jid}: {e}")
+                while True:
+                    try:
+                        await msg.edit_text(text)
+                        break
+                    except FloodWait as e:
+                        logger.warning(f"⚠️ FloodWait on edit_text (Job #{jid}): sleeping {e.value + 2}s")
+                        await asyncio.sleep(e.value + 2)
+                    except Exception as e:
+                        logger.warning(f"Failed to edit message for job {jid}: {e}")
+                        break
 
             def dl_hook(d):
                 nonlocal last_upd
@@ -162,22 +198,26 @@ class YouTubeEngineFinal:
                 })
                 if time.time() - last_upd_up > 4:
                     prog_text = UIUtils.progress_bar(cur, tot, "Syncing to Channel", up_start)
-                    try:
-                        await msg.edit_text(prog_text)
-                    except Exception as e:
-                        logger.warning(f"Failed to edit upload progress for job {jid}: {e}")
+                    await safe_edit(prog_text)
                     last_upd_up = time.time()
 
             # Metadata parsing
             d, w, h = extract_video_metadata(v_path)
 
-            await self.bot.send_video(
-                chat_id=CHANNEL_ID, video=v_path, 
-                thumb=t_path if os.path.exists(t_path) else None, 
-                duration=d, width=w, height=h, 
-                caption=ai_caption, progress=up_prog, 
-                supports_streaming=True
-            )
+            while True:
+                try:
+                    await self.bot.send_video(
+                        chat_id=CHANNEL_ID, video=v_path, 
+                        thumb=t_path if os.path.exists(t_path) else None, 
+                        duration=d, width=w, height=h, 
+                        caption=ai_caption, progress=up_prog, 
+                        supports_streaming=True
+                    )
+                    break
+                except FloodWait as e:
+                    logger.warning(f"⚠️ FloodWait on send_video (Job #{jid}): sleeping {e.value + 2}s")
+                    await asyncio.sleep(e.value + 2)
+
             await self.db.update_status(jid, JobStatus.COMPLETED.value)
             self.active_jobs[jid].update({
                 "status": "completed",
@@ -774,6 +814,9 @@ async def main():
         
     if not os.path.exists(DOWNLOAD_DIR): 
         os.makedirs(DOWNLOAD_DIR)
+        
+    # Start cleanup task
+    asyncio.create_task(engine.start_cleanup_task())
         
     for i in range(MAX_CONCURRENT_TASKS): 
         asyncio.create_task(engine.worker(i))

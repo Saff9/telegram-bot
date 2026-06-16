@@ -29,5 +29,6 @@ if CHANNEL_ID:
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 DOWNLOAD_DIR = "downloads"
 DB_PATH = "bot_data.db"
-MAX_CONCURRENT_TASKS = 5
+MAX_CONCURRENT_TASKS = int(os.getenv("MAX_CONCURRENT_TASKS", "2" if os.getenv("PORT") else "5"))
 MIN_DISK_GB = 2
+

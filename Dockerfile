@@ -17,6 +17,11 @@ RUN apt-get update && apt-get install -y \
 RUN echo "ControlPort 9051" >> /etc/tor/torrc && \
     echo "CookieAuthentication 0" >> /etc/tor/torrc
 
+# Install Deno for yt-dlp signature solving
+RUN curl -fsSL https://deno.land/install.sh | sh
+ENV DENO_INSTALL="/root/.deno"
+ENV PATH="$DENO_INSTALL/bin:$PATH"
+
 
 # Set working directory
 WORKDIR /app

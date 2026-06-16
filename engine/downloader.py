@@ -10,20 +10,90 @@ logger = logging.getLogger("YT_ENGINE_DOWNLOADER")
 
 # --- Cobalt Stream Extraction ---
 async def get_cobalt_stream(url):
-    instances = ["https://cobalt.lucataco.com", "https://api.cobalt.tools", "https://cobalt-api.vkrdown.com"]
-    random.shuffle(instances)
-    for api in instances:
-        try:
-            async with aiohttp.ClientSession() as session:
-                payload = {"url": url, "videoQuality": "720", "audioFormat": "mp3", "isNoTTWatermark": True}
-                async with session.post(f"{api}/api/json", json=payload, timeout=12) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        if data.get("url"): 
-                            return data.get("url"), data.get("filename") or "video.mp4"
-        except: 
-            continue
+    hardcoded = [
+        "https://api.cobalt.tools",
+        "https://cobalt.lucataco.com",
+        "https://cobalt-api.vkrdown.com"
+    ]
+    apis = []
+    try:
+        registry_url = "https://instances.cobalt.best/api/instances.json"
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.get(registry_url, headers=headers, timeout=8) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if isinstance(data, list):
+                        for item in data:
+                            if isinstance(item, dict):
+                                api_url = item.get("api")
+                                online = item.get("online")
+                                is_online = False
+                                if isinstance(online, dict):
+                                    is_online = online.get("api", False)
+                                elif isinstance(online, bool):
+                                    is_online = online
+                                
+                                if api_url and is_online:
+                                    apis.append(api_url.rstrip('/'))
+    except Exception as e:
+        logger.warning(f"Failed to fetch dynamic cobalt instances: {e}")
+
+    # Deduplicate and merge with hardcoded defaults
+    apis = list(set(apis)) if apis else []
+    for h in hardcoded:
+        h_clean = h.rstrip('/')
+        if h_clean not in apis:
+            apis.append(h_clean)
+            
+    random.shuffle(apis)
+    logger.info(f"Retrieved {len(apis)} Cobalt instances for extraction.")
+
+    for api in apis:
+        # We try 2 endpoints for each API instance:
+        # 1. Root path '/' (Modern Cobalt v8/v10 API)
+        # 2. '/api/json' (Older Cobalt v7 API)
+        endpoints = [
+            (api, {
+                "url": url,
+                "videoQuality": "720",
+                "audioFormat": "mp3",
+                "filenameStyle": "classic",
+                "downloadMode": "auto"
+            }),
+            (f"{api}/api/json", {
+                "url": url,
+                "videoQuality": "720",
+                "audioFormat": "mp3",
+                "isNoTTWatermark": True
+            })
+        ]
+        
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        
+        for endpoint_url, payload in endpoints:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(endpoint_url, json=payload, headers=headers, timeout=12) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            if isinstance(data, dict):
+                                stream_url = data.get("url")
+                                filename = data.get("filename") or "video.mp4"
+                                if stream_url:
+                                    logger.info(f"🎯 Stream acquired via Cobalt API: {endpoint_url}")
+                                    return stream_url, filename
+            except:
+                continue
     return None, None
+
 
 # --- Socks5 Proxy Scraper ---
 async def get_fresh_proxies():

@@ -49,9 +49,9 @@ class YouTubeEngineFinal:
         while self.running:
             task = await self.queue.get()
             if not task: break
-            jid, url, msg = task
+            jid, task_type, payload, msg = task
             try: 
-                await self._process(jid, url, msg)
+                await self._process(jid, task_type, payload, msg)
             except Exception as e:
                 logger.exception(f"Job #{jid} failed")
                 try: 
@@ -97,7 +97,7 @@ class YouTubeEngineFinal:
             except Exception as e:
                 logger.warning(f"Error in cleanup task: {e}")
 
-    async def _process(self, jid, url, msg):
+    async def _process(self, jid, task_type, payload, msg):
         v_path, t_path = None, None
         
         # Clean up old jobs if there are too many
@@ -106,8 +106,12 @@ class YouTubeEngineFinal:
             for k, v in sorted_jobs[:-50]:
                 del self.active_jobs[k]
 
+        file_name = "Telegram Video"
+        if task_type == "telegram_video":
+            file_name = (payload.video and payload.video.file_name) or (payload.document and payload.document.file_name) or "video.mp4"
+
         self.active_jobs[jid] = {
-            "url": url,
+            "url": payload if task_type == "url" else f"Telegram Video: {file_name}",
             "status": "pending",
             "downloaded": 0,
             "total": 0,
@@ -140,24 +144,46 @@ class YouTubeEngineFinal:
                         logger.warning(f"Failed to edit message for job {jid}: {e}")
                         break
 
-            def dl_hook(d):
-                nonlocal last_upd
-                downloaded = d.get('downloaded_bytes', 0)
-                total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
-                self.active_jobs[jid].update({
-                    "status": "downloading",
-                    "downloaded": downloaded,
-                    "total": total,
-                    "timestamp": time.time()
-                })
-                
-                if d['status'] == 'downloading' and time.time() - last_upd > 4:
-                    prog_text = UIUtils.progress_bar(downloaded, total if total > 0 else 1, "Downloading Video", start_t)
-                    asyncio.run_coroutine_threadsafe(safe_edit(prog_text), loop)
-                    last_upd = time.time()
+            if task_type == "url":
+                def dl_hook(d):
+                    nonlocal last_upd
+                    downloaded = d.get('downloaded_bytes', 0)
+                    total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
+                    self.active_jobs[jid].update({
+                        "status": "downloading",
+                        "downloaded": downloaded,
+                        "total": total,
+                        "timestamp": time.time()
+                    })
+                    
+                    if d['status'] == 'downloading' and time.time() - last_upd > 4:
+                        prog_text = UIUtils.progress_bar(downloaded, total if total > 0 else 1, "Downloading Video", start_t)
+                        asyncio.run_coroutine_threadsafe(safe_edit(prog_text), loop)
+                        last_upd = time.time()
 
-            # Delegate to downloader module
-            info, v_path = await download_video(url, jid, dl_hook, DOWNLOAD_DIR)
+                # Delegate to downloader module
+                info, v_path = await download_video(payload, jid, dl_hook, DOWNLOAD_DIR)
+            else:
+                # Telegram video
+                v_path = os.path.join(DOWNLOAD_DIR, f"{jid}_{file_name}")
+                
+                async def dl_prog(cur, tot):
+                    nonlocal last_upd
+                    self.active_jobs[jid].update({
+                        "downloaded": cur,
+                        "total": tot,
+                        "timestamp": time.time()
+                    })
+                    if time.time() - last_upd > 4:
+                        prog_text = UIUtils.progress_bar(cur, tot, "Downloading from Telegram", start_t)
+                        await safe_edit(prog_text)
+                        last_upd = time.time()
+                
+                await payload.download(file_name=v_path, progress=dl_prog)
+                info = {
+                    'title': os.path.splitext(file_name)[0],
+                    'ext': os.path.splitext(file_name)[1].replace('.', '') if '.' in file_name else 'mp4'
+                }
 
             # 2. AI Metadata
             await self.db.update_status(jid, JobStatus.AI_PROCESSING.value)
@@ -166,7 +192,11 @@ class YouTubeEngineFinal:
                 "timestamp": time.time()
             })
             await safe_edit("🧠 **AI Enhancing Metadata...**")
-            ai_title, ai_caption = await self.llm.generate_metadata(info.get('title', 'Unknown'))
+            
+            raw_title = info.get('title', 'Unknown')
+            if task_type == "telegram_video" and payload.caption:
+                raw_title = payload.caption
+            ai_title, ai_caption = await self.llm.generate_metadata(raw_title)
 
             # 3. Processing
             await self.db.update_status(jid, JobStatus.PROCESSING.value)
@@ -270,7 +300,23 @@ async def handle_cookies(c, m):
             "and paste the complete content of your `cookies.txt` file as the value."
         )
     else:
-        await m.reply_text("❓ Please upload a file named `cookies.txt` to update bot cookies.")
+        # Check if document is a video file
+        is_video = m.document.mime_type and m.document.mime_type.startswith("video/")
+        if is_video:
+            await handle_media(c, m)
+        else:
+            await m.reply_text("❓ Please upload a valid video file or a `cookies.txt` file.")
+
+@app.on_message(filters.video & filters.private)
+async def handle_media(c, m):
+    file_id = m.video.file_unique_id if m.video else m.document.file_unique_id
+    existing = await db_mgr.get_job_by_url(f"tg_file_{file_id}")
+    if existing: 
+        return await m.reply_text("⚠️ This video is already in queue or processing.")
+        
+    s = await m.reply_text("🔍 **Adding Telegram Video to Queue...**")
+    jid = await db_mgr.add_job(f"tg_file_{file_id}", m.chat.id, s.id)
+    await engine.queue.put((jid, "telegram_video", m, s))
 
 @app.on_message(filters.regex(r"(https?://)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)/.+") & filters.private)
 async def handle(c, m):
@@ -281,7 +327,7 @@ async def handle(c, m):
     
     s = await m.reply_text("🔍 **Adding to Queue...**")
     jid = await db_mgr.add_job(m.text, m.chat.id, s.id)
-    await engine.queue.put((jid, m.text, s))
+    await engine.queue.put((jid, "url", m.text, s))
 
 def get_web_ui():
     return """<!DOCTYPE html>

@@ -276,13 +276,29 @@ class YouTubeEngineFinal:
                     ydl_opts['external_downloader'] = 'aria2c'
                     ydl_opts['external_downloader_args'] = ['--min-split-size=1M', '--max-connection-per-server=16', '--split=16']
                 
+                if ydl_opts['cookiefile']:
+                    try:
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
+                            if info:
+                                v_path = ydl.prepare_filename(info)
+                                logger.info("✅ Standard yt-dlp with cookies succeeded!")
+                    except Exception as e:
+                        logger.error(f"Standard yt-dlp with cookies failed: {e}", exc_info=True)
+
+            # 2b. yt-dlp WITHOUT Cookies (Cookie-less fallback)
+            if not info:
+                logger.info("🛡️ Trying yt-dlp WITHOUT Cookies...")
+                ydl_opts_nocookies = ydl_opts.copy()
+                ydl_opts_nocookies['cookiefile'] = None
                 try:
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    with yt_dlp.YoutubeDL(ydl_opts_nocookies) as ydl:
                         info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
                         if info:
                             v_path = ydl.prepare_filename(info)
+                            logger.info("✅ Standard yt-dlp WITHOUT cookies succeeded!")
                 except Exception as e:
-                    logger.error(f"Standard yt-dlp download failed: {e}", exc_info=True)
+                    logger.error(f"Standard yt-dlp WITHOUT cookies failed: {e}", exc_info=True)
 
             # 3. Proxy-Brute Force (The Hammer)
             if not info:
@@ -293,16 +309,31 @@ class YouTubeEngineFinal:
                 for proxy in proxies[:15]: # Try top 15 fresh proxies
                     logger.info(f"🔄 Retrying with Proxy: {proxy}")
                     ydl_opts['proxy'] = proxy
+                    
+                    # Try with cookies if they exist
+                    if ydl_opts['cookiefile']:
+                        try:
+                            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                                info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
+                                if info:
+                                    v_path = ydl.prepare_filename(info)
+                                    logger.info(f"✅ Proxy {proxy} with cookies succeeded!")
+                                    break
+                        except Exception as e:
+                            logger.warning(f"Proxy {proxy} with cookies failed: {e}")
+                    
+                    # Try without cookies on the same proxy
                     try:
-                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        ydl_opts_nocookies = ydl_opts.copy()
+                        ydl_opts_nocookies['cookiefile'] = None
+                        with yt_dlp.YoutubeDL(ydl_opts_nocookies) as ydl:
                             info = await asyncio.get_event_loop().run_in_executor(None, lambda: ydl.extract_info(url, download=True))
                             if info:
                                 v_path = ydl.prepare_filename(info)
-                        if info: 
-                            logger.info("✅ Proxy Brute-Force Successful!")
-                            break
+                                logger.info(f"✅ Proxy {proxy} WITHOUT cookies succeeded!")
+                                break
                     except Exception as e:
-                        logger.warning(f"Proxy {proxy} download failed: {e}")
+                        logger.warning(f"Proxy {proxy} WITHOUT cookies failed: {e}")
                         continue
 
             if not info:

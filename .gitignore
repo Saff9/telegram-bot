@@ -20,9 +20,6 @@ downloads/
 *.jpg
 *.jpeg
 
-# Cookies and sensitive session data
-cookies.txt
-
 # Virtual environments
 .venv/
 venv/

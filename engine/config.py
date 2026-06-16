@@ -1,0 +1,29 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# --- Configuration & Constants ---
+API_ID = os.getenv("API_ID")
+if API_ID:
+    API_ID = API_ID.strip().strip('"').strip("'")
+    if API_ID.isdigit():
+        API_ID = int(API_ID)
+
+API_HASH = os.getenv("API_HASH")
+if API_HASH:
+    API_HASH = API_HASH.strip().strip('"').strip("'")
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if BOT_TOKEN:
+    BOT_TOKEN = BOT_TOKEN.strip().strip('"').strip("'")
+
+CHANNEL_ID = os.getenv("CHANNEL_ID")
+if CHANNEL_ID:
+    CHANNEL_ID = CHANNEL_ID.strip().strip('"').strip("'")
+
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+DOWNLOAD_DIR = "downloads"
+DB_PATH = "bot_data.db"
+MAX_CONCURRENT_TASKS = 5
+MIN_DISK_GB = 2

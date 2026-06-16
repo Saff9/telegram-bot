@@ -21,6 +21,10 @@ if BOT_TOKEN:
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 if CHANNEL_ID:
     CHANNEL_ID = CHANNEL_ID.strip().strip('"').strip("'")
+    if CHANNEL_ID.startswith("-") and CHANNEL_ID[1:].isdigit():
+        CHANNEL_ID = int(CHANNEL_ID)
+    elif CHANNEL_ID.isdigit():
+        CHANNEL_ID = int(CHANNEL_ID)
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 DOWNLOAD_DIR = "downloads"

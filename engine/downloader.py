@@ -51,8 +51,24 @@ async def download_video(url, jid, dl_hook, download_dir):
             async with aiohttp.ClientSession() as session:
                 async with session.get(stream_url, timeout=300) as resp:
                     if resp.status == 200:
-                        with open(v_path, 'wb') as f: 
-                            f.write(await resp.read())
+                        total_size = int(resp.headers.get('content-length', 0))
+                        downloaded = 0
+                        with open(v_path, 'wb') as f:
+                            async for chunk in resp.content.iter_chunked(1024 * 1024):
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                if dl_hook:
+                                    dl_hook({
+                                        'status': 'downloading',
+                                        'downloaded_bytes': downloaded,
+                                        'total_bytes': total_size
+                                    })
+                        if dl_hook:
+                            dl_hook({
+                                'status': 'finished',
+                                'downloaded_bytes': total_size,
+                                'total_bytes': total_size
+                            })
                         info = {'title': filename or 'Video', 'ext': 'mp4'}
         except Exception as e:
             logger.warning(f"Failed downloading from Cobalt stream: {e}")
